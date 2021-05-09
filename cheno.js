@@ -45,8 +45,14 @@ const executeCallback = (promise, value, status) => {
   })
 }
 
+/**
+ * 获取一个可兼容浏览器和node环境的延迟至栈尾执行的函数。
+ * 如果不支持，将在下个事件循环执行。
+ *
+ * @param {Function} fn - 需要延迟的函数
+ * @param {...any} [args] - 需要依次传入延迟函数的参数
+ */
 const delayFunc = ( () => {
-  // 区分 browser 和 node 环境, 针对 browser 环境做 polyfill
   if(typeof window !== 'undefined') {
     // Firefox 和 chrome 早期版本带有前缀
     const MutationObserver = window.MutationObserver || window.WebkitMutationObserver || window.MozMutationObserver;
@@ -54,10 +60,13 @@ const delayFunc = ( () => {
     if(typeof MutationObserver !== 'undefined') {
       let counter = 1,
         callbasks = [];
+      // 注册 observer 对象的时候的回调函数
       const observer = new MutationObserver(() => {
         const copys = callbacks.splice(0)
-        // 执行每一个回调函数，并且传入参数10421
+        // 执行每一个回调函数，并且传入参数
+        // 每一个回调对象都是一个数组， 第一个元素是回调函数，接着是回调函数的参数
         copys.forEach(([fn, ...params]) => {
+          // 回调函数，才执行
           if(typeof fn === 'function') {
             fn.apply(undefined, params)
           }
@@ -65,16 +74,21 @@ const delayFunc = ( () => {
       });
 
       const textNode = document.createTextNode(counter)
+      // 观察其 characterData 的变化
       observer.observe(textNode, {characterData: true})
       // 返回的函数用于执行微任务
       return (...p) => {
         // 将此函数接收到的回调函数压入队列中，并且修改 DOM 的数据，引发 MutationOberver 回调，执行微任务
+        // p 是一个数组
         callbasks.push(p);
         counter = (counter + 1) % 2
+        // 修改 DOM 的值，引起微任务回调函数执行
         textNode.data = counter
       }
     }
   }
+
+  // process.nextTick 和 setImmediate 都是接收函数和其参数，形参一致
 
   // 第二个判断，使用 browserify 自动导入的 process.nextTick
   if(typeof process !== 'undefined' && process.nextTick) {
@@ -84,10 +98,12 @@ const delayFunc = ( () => {
   if(typeof setImmediate === 'function') {
     return setImmediate
   }
+  // setTimeout 需要封装
   return (fn, ...p) => setTimeout(fn, 0, ...p)
 })();
 
 const delayToNextTick = promise => {
+  // 传给 delayFunc 的参数都已经是一样的形式了，都可以接受
   delayFunc(
     executeCallback,
     promise,
@@ -115,9 +131,11 @@ const executeOnce = (resolve, reject, context = undefined) => {
   ]
 }
 
-
+// resolve 和 reject 函数在被调用的时候，都使用 call 绑定了一个 promise 宿主，因此内部可以使用稳定的
+// this 访问其属性
 const resolve = function(value) {
   if(this[PromiseState] !== 'pending') return;
+  // 传入的 this 即调用 resolve 的 promise 实例
   resolutionProcedure(this, value)
 }
 
@@ -126,6 +144,7 @@ const reject = function(reason) {
 
   this[PromiseState] = 'rejected'
   this[PromiseValue] = reason
+  // reject 不需要解析值，一律将 reason 设置为值，并且将当前 promise 传递给微任务生成函数
   delayToNextTick(this)
 }
 
