@@ -10,7 +10,7 @@ const onRejectMap = new Map(); // 存储某个 promise 的 rejected 状态的监
 const nextPromiseMap = new Map();
 
 /**
- * 执行 promise 某个状态的监听器
+ * 使用微任务执行 promise 某个状态的监听器
  * @param  {Promise} promise - 需要执行回调的 Promise 实例
  * @param  {any} value - 结果值或者异常原因值
  * @param  {boolean} status - true = fulfilled, false = rejected
@@ -179,3 +179,72 @@ const resolutionProcedure = (promise, x) => {
     }
   }
 }
+
+class Promise {
+  /**
+   * 创建一个 promise 实例
+   * @param {Function} executor
+   *
+   * @memberOf Promise
+   */
+  constructor(executor) {
+    this[PromiseState] = 'pending'; // default
+    this[PromiseValue] = undefined
+    // 初始化的时候一切监听器和下一个 promise 都不存在
+    onFulfillMap.set(this, [])
+    onRejectMap.set(this, [])
+    nextPromiseMap.set(this, [])
+    if(typeof executor === 'function') {
+      const [resolvePromise, rejectPromise, status] = executeOnce(resolve, reject, this)
+      try {
+        executor(resolvePromise, rejectPromise)
+      } catch (e) {
+        // 保证异常之前执行了某个方法，异常就无效
+        if(!status.executed) {
+          reject.call(this, e)
+        }
+      }
+    }
+  }
+
+  then(onFulfilled, onRejected) {
+    onFulfillMap.get(this).push(onFulfilled)
+    onRejectMap.get(this).push(onRejected)
+    if(this[PromiseState] !== "pending") delayToNextTick(this)
+
+    const nextPromise = new Promise()
+    nextPromiseMap.get(this).push(nextPromise)
+
+    return nextPromise
+  }
+
+  catch(onRejected) {
+    return this.then(null, onRejected)
+  }
+
+  get[Symbol.toStringTag]() {
+    return 'Promise'
+  }
+}
+
+Promise.resolve = value => {
+  if(value instanceof Promise) {
+    return value
+  }
+  try {
+    if(typeof value === 'object' || typeof value === 'function') {
+      const then = value.then; // 如果 then 是一个属性，只允许调用一次
+      if(typeof then === 'function') {
+        return new Promise(then.bind(value))
+      }
+    }
+  } catch (e) {
+    return Promise.reject(e)
+  }
+  return new Promise(resolve => resolve(value))
+}
+
+Promise.reject = error => new Promise((resolve, reject) => reject(error))
+
+
+console.log(new Promise(res => res(1)));
