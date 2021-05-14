@@ -121,25 +121,50 @@ Yi.prototype.then = function(onFulfilled, onRejected) {
 Yi.prototype.broadcast = function() {
   const promise = this;
   // called after promise is resolved
-  if(this.state === 'pending') return
+  if(promise.state === 'pending') return
 
-  const callbackType = this.state === 'fulfilled' ? 'onFulfilled' : 'onRejected'
-  const toSettled = this.state === 'fulfilled' ? 'resolve' : 'reject'
-
-  setTimeout(() => {
-    promise.consumers.forEach(consumer => {
-      try {
-        const callback = consumer[callbackType]
-        // 如果 promise 具有 onFulfilled 或者 onRejected 方法，在 then 方法执行的时候添加的
-        if(callback) {
-          consumer.resolve(callback(promise.value))
-        } else {
-          // 状态转为 settled
-          consumer[toSettled](promise.value)
+  const callbackType = promise.state === 'fulfilled' ? 'onFulfilled' : 'onRejected'
+  const resolveOrReject = promise.state === 'fulfilled' ? 'resolve' : 'reject'
+  if(promise.consumers.length >= 0) {
+    setTimeout(() => {
+      promise.consumers.splice(0).forEach(consumer => {
+        try {
+          const callback = consumer[callbackType]
+          // 如果 promise 具有 onFulfilled 或者 onRejected 方法，在 then 方法执行的时候添加的
+          if(callback) {
+            consumer.resolve(callback(promise.value))
+          } else {
+            // 状态转为 settled
+            consumer[resolveOrReject](promise.value)
+          }
+        } catch (e) {
+          consumer.reject(e)
         }
-      } catch (e) {
-        consumer.reject(3)
-      }
-    })
-  }, 0);
+      })
+    }, 0);
+  }
 }
+
+Yi.prototype.catch = function(onRejected) {
+  return this.then(undefined, onRejected)
+}
+
+const p = new Yi((res, rej) => {
+  console.log('start');
+  rej(1)
+  // res(1)
+  // setTimeout(() => {
+  //   res(1)
+  // }, 100);
+})
+p
+.then(() => {
+  console.log(1);
+})
+.then(r => {
+  console.log(2);
+  throw new Error('bad')
+}).catch(r => {
+  console.log(3);
+  console.log(`reject: ${r}`);
+})
