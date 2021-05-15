@@ -145,6 +145,8 @@ Yi.prototype.broadcast = function() {
   }
 }
 
+// ok
+
 Yi.prototype.catch = function(onRejected) {
   return this.then(undefined, onRejected)
 }
