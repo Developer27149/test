@@ -9,68 +9,101 @@ function Y(executor) {
   this.value = undefined
   // 针对状态变更后需要异步调用的某些函数的规范定义，添加的数组属性
   this.consumers = []
-  executor(resolve, reject)
+  executor(this.resolve.bind(this), this.reject.bind(this))
+}
 
-  function resolve(value) {
-    if(this.state !== 'pending') return // 2.1.1.1, 2.1.3.1
-    this.state = 'fulfilled' // 2.1.1.1
-    this.value = value // 2.1.2.2
-    this.broadcast()
-  }
+Y.prototype.resolve = function(value) {
+  if(this.state !== 'pending') return // 2.1.1.1, 2.1.3.1
+  this.state = 'fulfilled' // 2.1.1.1
+  this.value = value // 2.1.2.2
+  this.broadcast()
+}
 
-  function reject(reason) {
-    if(this.state !== 'pending') return // 2.1.1.1, 2.1.3.1
-    this.state = 'rejected' // 2.1.1.1
-    this.value = reason // 2.1.3.2
-    this.broadcast()
-  }
+Y.prototype.reject = function (reason) {
+  if(this.state !== 'pending') return // 2.1.1.1, 2.1.3.1
+  this.state = 'rejected' // 2.1.1.1
+  this.value = reason // 2.1.3.2
+  this.broadcast()
+}
 
-  function then(onFulfilled, onRejected) {
-    const consumer = new Y(function() {});
-    // 2.2.1.1, 2.2.1.2
-    consumer.onFulfilled = typeof onFulfilled === 'function' ? onFulfilled : undefined
-    consumer.onRejected = typeof onRejected === 'function' ? onRejected : undefined
-    this.consumers.push(consumer);
-    this.broadcast();
-    return consumer
-  }
+Y.prototype.then = function(onFulfilled, onRejected) {
+  const consumer = new Y(function() {});
+  // 2.2.1.1, 2.2.1.2
+  consumer.onFulfilled = typeof onFulfilled === 'function' ? onFulfilled : undefined
+  consumer.onRejected = typeof onRejected === 'function' ? onRejected : undefined
+  this.consumers.push(consumer);
+  this.broadcast();
+  return consumer
+}
 
-  function broadcast() {
-    // 2.2.5
-    const promise = this;
-    // 2.2.2.1, 2.2.2.2, 2.2.3.1, 2.2.3.2
-    if(promise.state === 'pending') return;
-    // 2.2.6.1, 2.2.6.2
-    const callbackName = promise.state === 'fulfilled' ? 'onFulfilled' : 'onRejected'
-    const resolver = promise.state === 'fulfilled' ? 'resolve' : 'reject'
-    // 2.2.4
-    setTimeout(
-      function() {
-        // 2.2.6.1, 2.2.6.2, 2.2.2.3, 2.2.3.3
-        const arr = promise.consumers.splice(0)
-        for (let i = 0; i < arr.length; i++) {
-          try {
-            const consumer = arr[i];
-            const callback = consumer[callbackName]
-            // 2.2.1.1, 2.2.1.2. 2.2.5
-            if(callback) {
-              // 2.2.7.1 暂时直接处理
-              consumer.resolve(callback[promise.value])
-            } else {
-              // 2.2.7.3
-              consumer[resolver](promise.value)
-            }
-          } catch (e) {
-            // 2.2.7.2
-            consumer.reject(e)
+Y.prototype.catch = function(onRejected) {
+  return this.then(undefined, onRejected)
+}
+
+Y.prototype.broadcast = function() {
+  // 2.2.5
+  const promise = this;
+  // 2.2.2.1, 2.2.2.2, 2.2.3.1, 2.2.3.2
+  if(promise.state === 'pending') return;
+  // 2.2.6.1, 2.2.6.2
+  const callbackName = promise.state === 'fulfilled' ? 'onFulfilled' : 'onRejected'
+  const resolver = promise.state === 'fulfilled' ? 'resolve' : 'reject'
+  // 2.2.4
+  setTimeout(
+    function() {
+      // 2.2.6.1, 2.2.6.2, 2.2.2.3, 2.2.3.3
+      const arr = promise.consumers.splice(0)
+      for (let i = 0; i < arr.length; i++) {
+        try {
+          const consumer = arr[i];
+          const callback = consumer[callbackName]
+          // 2.2.1.1, 2.2.1.2. 2.2.5
+          if(callback) {
+            // 2.2.7.1 暂时直接处理
+            consumer.resolve(callback(promise.value))
+          } else {
+            // 2.2.7.3
+            consumer[resolver](promise.value)
           }
+        } catch (e) {
+          // 2.2.7.2
+          consumer.reject(e)
         }
       }
-    )
-  }
+    }
+  )
 }
 
 
 
-const y = new Y(() => {})
-console.log(y);
+// const y = new Y((resolve, reject) =>{
+//   console.log('start', resolve);
+//   setTimeout(() => {
+//     reject('ok')
+//   }, 1000);
+// })
+// console.log(y);
+// y.then(r => {
+//   console.log('resolve: ', r);
+// }).catch(r => {
+//   console.log('reject: ', r);
+// })
+// console.log('end');
+// new Y((r) => {
+//   r()
+// }).then(() => {
+//   console.log(0);
+//   return new Y((r) => {
+//     r(4)
+//   })
+// }).then((r) => {
+//   console.log(r);
+// })
+
+// new Y((r) => {
+//   r()
+// }).then(() => {
+//   console.log(1);
+// }).then(() => {
+//   console.log(2);
+// })

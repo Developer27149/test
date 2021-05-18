@@ -5,5 +5,8 @@
   "license": "MIT",
   "devDependencies": {
     "typescript": "^4.1.5"
+  },
+  "dependencies": {
+    "bluebird": "^3.7.2"
   }
 }
