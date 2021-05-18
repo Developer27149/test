@@ -3,7 +3,12 @@
   "version": "1.0.0",
   "main": "index.js",
   "license": "MIT",
+  "scripts": {
+    "test": "promises-aplus-tests y",
+    "test-zs": "promises-aplus-tests zousan"
+  },
   "devDependencies": {
+    "promises-aplus-tests": "^2.1.2",
     "typescript": "^4.1.5"
   },
   "dependencies": {

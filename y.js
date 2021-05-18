@@ -1,94 +1,3 @@
-function Y(executor) {
-  if(executor === undefined) {
-    throw new TypeError('You must give a executor function.')
-  }
-  if(typeof executor !== 'function') {
-    throw new TypeError('Executor must be a function')
-  }
-  this.state = 'pending'
-  this.value = undefined
-  // 针对状态变更后需要异步调用的某些函数的规范定义，添加的数组属性
-  this.consumers = []
-  executor(this.resolve.bind(this), this.reject.bind(this))
-}
-
-Y.prototype.resolve = function(value) {
-  if(this.state !== 'pending') return // 2.1.1.1, 2.1.3.1
-  this.state = 'fulfilled' // 2.1.1.1
-  this.value = value // 2.1.2.2
-  this.broadcast()
-}
-
-Y.prototype.reject = function (reason) {
-  if(this.state !== 'pending') return // 2.1.1.1, 2.1.3.1
-  this.state = 'rejected' // 2.1.1.1
-  this.value = reason // 2.1.3.2
-  this.broadcast()
-}
-
-Y.prototype.then = function(onFulfilled, onRejected) {
-  const consumer = new Y(function() {});
-  // 2.2.1.1, 2.2.1.2
-  consumer.onFulfilled = typeof onFulfilled === 'function' ? onFulfilled : undefined
-  consumer.onRejected = typeof onRejected === 'function' ? onRejected : undefined
-  this.consumers.push(consumer);
-  this.broadcast();
-  return consumer
-}
-
-Y.prototype.catch = function(onRejected) {
-  return this.then(undefined, onRejected)
-}
-
-Y.prototype.broadcast = function() {
-  // 2.2.5
-  const promise = this;
-  // 2.2.2.1, 2.2.2.2, 2.2.3.1, 2.2.3.2
-  if(promise.state === 'pending') return;
-  // 2.2.6.1, 2.2.6.2
-  const callbackName = promise.state === 'fulfilled' ? 'onFulfilled' : 'onRejected'
-  const resolver = promise.state === 'fulfilled' ? 'resolve' : 'reject'
-  // 2.2.4
-  setTimeout(
-    function() {
-      // 2.2.6.1, 2.2.6.2, 2.2.2.3, 2.2.3.3
-      const arr = promise.consumers.splice(0)
-      for (let i = 0; i < arr.length; i++) {
-        try {
-          const consumer = arr[i];
-          const callback = consumer[callbackName]
-          // 2.2.1.1, 2.2.1.2. 2.2.5
-          if(callback) {
-            // 2.2.7.1 暂时直接处理
-            consumer.resolve(callback(promise.value))
-          } else {
-            // 2.2.7.3
-            consumer[resolver](promise.value)
-          }
-        } catch (e) {
-          // 2.2.7.2
-          consumer.reject(e)
-        }
-      }
-    }
-  )
-}
-
-// const promise = new Y((resolve, reject) => {
-//   console.log('start');
-//   setTimeout(() => {
-//     resolve('ok')
-//   }, 10);
-// })
-
-// promise.then(r => {
-//   console.log('resolve: ', r);
-// }).catch((r) => {
-//   console.log(`reject: ${r}`);
-// })
-
-// console.log('end');
-
 const PENDING = 'pending'
 const FULFILLED = 'fulfilled'
 const REJECTED = 'rejected'
@@ -104,20 +13,68 @@ class Yi {
     this.state = PENDING
     this.value = undefined
     this.consumers = [] // 保存当前 promise then 方法中返回的 promise 实例
-    function onFulfill(value) {
-      if(this.state !== PENDING) return // 2.1.2.1, 2.1.3.1
-      this.state = FULFILLED // 2.1.1.1
-      this.value = value // 2.1.2.2
-      this.broadcast()
+    try {
+      executor(this.onFulfill.bind(this), this.onReject.bind(this))
+    } catch (e) {
+      this.onReject.bind(this)(e)
     }
+  }
 
-    function onReject(reason) {
-      if(this.state !== PENDING) return // 2.1.2.1, 2.1.3.1
-      this.state = REJECTED // 2.1.1.1
-      this.value = reason // 2.1.3.2
+  onFulfill(x) {
+    let wasCalled, then;
+    // 2.3.1
+    if(this === x) {
+      throw new TypeError('Circular reference: promise value is promise itself')
+    }
+    // 2.3.2
+    if(x instanceof Yi) {
+      x.then(this.onFulfill.bind(this), this.onReject.bind(this))
+    } else if(x === Object(x)) {
+      // 2.3.3
+      try {
+        // 2.3.3.1
+        then = x.then;
+        if(typeof then === 'function') {
+          // 2.3.3.3
+          then.call(
+            x,
+            function resolve(y) {
+              // 2.3.3.3.3 do not allow multiple calls
+              if(wasCalled) return
+              wasCalled = true
+              // 2.3.3.3.1 recurse
+              this.onFulfill(y)
+            }.bind(this),
+            function reject(reasonY) {
+              if(wasCalled) return
+              wasCalled = true
+              this.onReject(reasonY)
+            }.bind(this)
+          )
+        } else {
+          // 2.3.3.4
+          if(this.state !== PENDING) return
+          this.state = FULFILLED
+          this.value = x
+          this.broadcast()
+        }
+      } catch (e) {
+        if(wasCalled) return
+        this.onReject(e)
+      }
+    } else {
+      if(this.state !== PENDING) return
+      this.state = FULFILLED
+      this.value = x
       this.broadcast()
     }
-    executor(onFulfill.bind(this), onReject.bind(this))
+  }
+
+  onReject(reason) {
+    if(this.state !== PENDING) return // 2.1.2.1, 2.1.3.1
+    this.state = REJECTED // 2.1.1.1
+    this.value = reason // 2.1.3.2
+    this.broadcast()
   }
 
   static resolve(value) {
@@ -130,6 +87,15 @@ class Yi {
     return new Yi((_, reject) => {
       reject(reason)
     })
+  }
+
+  static deferred() {
+    const result = {}
+    result.promise = new Yi((resolve, reject) => {
+      result.resolve = resolve
+      result.reject = reject
+    })
+    return result
   }
 
   broadcast() {
@@ -146,20 +112,18 @@ class Yi {
         const consumers = promise.consumers.splice(0)
         for (let index = 0; index < consumers.length; index++) {
           const consumer = consumers[index];
-          console.log(consumer);
           try {
             const callback = consumer[callbackName];
             // 2.2.1.1, 2.2.1.2
             // 2.2.5 without context
             if(callback) {
-              // 2.2.7.1
-              consumer.resolve(callback(promise.value))
+              // 2.2.7.1 execute the Promise Resolution Produre
+              consumer.onFulfill(callback(promise.value))
             } else {
               // 2.2.7.3
               consumer[resolver](promise.value)
             }
           } catch (e) {
-            // console.log('here', e);
             consumer.onReject(e)
           }
         }
@@ -168,7 +132,7 @@ class Yi {
   }
 
   then(onFulfilled, onRejected) {
-    const promise = new Yi(() => {})
+    const promise = new Yi(nop)
     // 2.2.1.1
     promise.onFulfilled = typeof onFulfilled === 'function' ? onFulfilled : undefined
     // 2.2.1.2
@@ -179,7 +143,6 @@ class Yi {
     // 2.2.7
     return promise
   }
-
   catch(onRejected) {
     return this.then(undefined, onRejected)
   }
@@ -197,7 +160,6 @@ const soon = (() => {
         fq[fqStart]()
       } catch (err) {
         Yi.error(err)
-        // console.log(err, 'is err');
       }
       fq[fqStart++] = undefined // increase start pointer and dereference function just called
       if(fqStart === bufferSize) {
@@ -232,7 +194,6 @@ const soon = (() => {
     // final fallback - shouldn't be used for much except very old browsers
     return function() { setTimeout(callQueue,0) }
   })()
-
   // this is the function that will be assigned to soon
   // it take the function to call and examines all arguments
   return fn => {
@@ -245,18 +206,6 @@ const soon = (() => {
 
 // If we have a console, use it for our errors and warnings, else do nothing (either/both can be overwritten)
 const nop = () => { }
-Yi.warn = typeof console !== 'undefined' ? console.warn : nop
 Yi.error = typeof console !== 'undefined' ? console.error : nop
 
-const p = new Yi((res, rej) => {
-  console.log('start');
-  rej(1)
-})
-p.then(res => {
-  console.log(`resolve: ${res}`);
-}).catch(r => {
-  console.log(`reject: ${r}`);
-})
-console.log('end');
-
-// console.log(p);
+module.exports = Yi
