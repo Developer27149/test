@@ -74,36 +74,17 @@ Y.prototype.broadcast = function() {
   )
 }
 
+const promise = new Y((resolve, reject) => {
+  console.log('start');
+  setTimeout(() => {
+    resolve('ok')
+  }, 10);
+})
 
+promise.then(r => {
+  console.log('resolve: ', r);
+}).catch((r) => {
+  console.log(`reject: ${r}`);
+})
 
-// const y = new Y((resolve, reject) =>{
-//   console.log('start', resolve);
-//   setTimeout(() => {
-//     reject('ok')
-//   }, 1000);
-// })
-// console.log(y);
-// y.then(r => {
-//   console.log('resolve: ', r);
-// }).catch(r => {
-//   console.log('reject: ', r);
-// })
-// console.log('end');
-// new Y((r) => {
-//   r()
-// }).then(() => {
-//   console.log(0);
-//   return new Y((r) => {
-//     r(4)
-//   })
-// }).then((r) => {
-//   console.log(r);
-// })
-
-// new Y((r) => {
-//   r()
-// }).then(() => {
-//   console.log(1);
-// }).then(() => {
-//   console.log(2);
-// })
+console.log('end');
