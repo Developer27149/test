@@ -5,7 +5,8 @@
   "license": "MIT",
   "scripts": {
     "test": "promises-aplus-tests y",
-    "test-zs": "promises-aplus-tests zousan"
+    "test-zs": "promises-aplus-tests zousan",
+    "test-yi": "promises-aplus-tests yi"
   },
   "devDependencies": {
     "promises-aplus-tests": "^2.1.2",
